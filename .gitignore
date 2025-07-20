@@ -5,6 +5,7 @@ yarn-error.log
 
 # IDE files
 .vscode/
+.vscode/sftp.json
 .idea/
 
 # Dependency lock files
