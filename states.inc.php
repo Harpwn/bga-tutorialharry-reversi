@@ -1,5 +1,11 @@
 <?php
 declare(strict_types=1);
+
+use Bga\GameFramework\GameStateBuilder;
+use Bga\GameFramework\StateType;
+
+require_once("modules/php/constants.inc.php");
+
 /*
  * THIS FILE HAS BEEN AUTOMATICALLY GENERATED. ANY CHANGES MADE DIRECTLY MAY BE OVERWRITTEN.
  *------
@@ -21,32 +27,32 @@ if (false) {
 	
 }
 
-$machinestates = array(
-	1 => array(
-		'name' => 'gameSetup',
-		'description' => '',
-		'type' => 'manager',
-		'action' => 'stGameSetup',
-		'transitions' => array(
-			'' => 2,
-		),
-	),
-	2 => array(
-		'name' => 'dummmy',
-		'description' => clienttranslate('${actplayer} must play a card or pass'),
-		'descriptionmyturn' => clienttranslate('${you} must play a card or pass'),
-		'type' => 'activeplayer',
-		'possibleactions' => ['playCard', 'pass'],
-		'transitions' => array(
-			'playCard' => 2,
-			'pass' => 2,
-		),
-	),
-	99 => array(
-		'name' => 'gameEnd',
-		'description' => clienttranslate('End of game'),
-		'type' => 'manager',
-		'action' => 'stGameEnd',
-		'args' => 'argGameEnd',
-	),
-);
+$machinestates = [
+    ST_BGA_GAME_SETUP => GameStateBuilder::gameSetup(ST_PLAYER_PLAY_DISC)->build(),
+    
+    ST_PLAYER_PLAY_DISC => GameStateBuilder::create()
+        ->name('playerTurn')
+        ->description(clienttranslate('${actplayer} must play a disc'))
+		->descriptionmyturn(clienttranslate('${you} must play a disc'))
+        ->type(StateType::ACTIVE_PLAYER)
+        ->args('argPlayerTurn')
+        ->possibleactions([
+            'actPlayDisc',
+        ])
+        ->transitions([
+            'playDisc' => ST_NEXT_PLAYER,
+        ])
+        ->build(),
+    
+    ST_NEXT_PLAYER => GameStateBuilder::create()
+        ->name('nextPlayer')
+        ->type(StateType::GAME)
+        ->action('stNextPlayer')
+        ->updateGameProgression(true)
+        ->transitions([
+            'nextTurn' => ST_PLAYER_PLAY_DISC, 
+            'cantPlay' => ST_NEXT_PLAYER,
+            'endGame' => ST_END_GAME,
+        ])
+        ->build(),
+];

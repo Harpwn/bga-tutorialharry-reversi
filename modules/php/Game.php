@@ -1,4 +1,5 @@
 <?php
+
 /**
  *------
  * BGA framework: Gregory Isabelli & Emmanuel Colin & BoardGameArena
@@ -14,6 +15,7 @@
  *
  * In this PHP file, you are going to defines the rules of the game.
  */
+
 declare(strict_types=1);
 
 namespace Bga\Games\DigidevilTutorialReversi;
@@ -43,7 +45,7 @@ class Game extends \Table
             "my_second_global_variable" => 11,
             "my_first_game_variant" => 100,
             "my_second_game_variant" => 101,
-        ]);        
+        ]);
 
         self::$CARD_TYPES = [
             1 => [
@@ -79,32 +81,67 @@ class Game extends \Table
      *
      * @throws BgaUserException
      */
-    public function actPlayCard(int $card_id): void
+    public function actPlayDisc(int $x, int $y): void
     {
-        // Retrieve the active player ID.
-        $player_id = (int)$this->getActivePlayerId();
+         $player_id = intval($this->getActivePlayerId()); 
+        
+        // Now, check if this is a possible move
+        $board = $this->getBoard();
+        $turnedOverDiscs = $this->getTurnedOverDiscs( $x, $y, $player_id, $board );
+        
+        if( count( $turnedOverDiscs ) > 0 )
+        {
+            // This move is possible!
 
-        // check input values
-        $args = $this->argPlayerTurn();
-        $playableCardsIds = $args['playableCardsIds'];
-        if (!in_array($card_id, $playableCardsIds)) {
-            throw new \BgaUserException('Invalid card choice');
+        $sql = "UPDATE board SET board_player='$player_id'
+                    WHERE ( board_x, board_y) IN ( ";
+            
+            foreach( $turnedOverDiscs as $turnedOver )
+            {
+                $sql .= "('".$turnedOver['x']."','".$turnedOver['y']."'),";
+            }
+            $sql .= "('$x','$y') ) ";
+                       
+            $this->DbQuery( $sql );
+            // Update scores according to the number of disc on board
+            $sql = "UPDATE player
+                    SET player_score = (
+                    SELECT COUNT( board_x ) FROM board WHERE board_player=player_id
+                    )";
+            $this->DbQuery( $sql );
+            
+            // Statistics
+            $this->incStat( count( $turnedOverDiscs ), "turnedOver", $player_id );
+            if( ($x==1 && $y==1) || ($x==8 && $y==1) || ($x==1 && $y==8) || ($x==8 && $y==8) )
+                $this->incStat( 1, 'discPlayedOnCorner', $player_id );
+            else if( $x==1 || $x==8 || $y==1 || $y==8 )
+                $this->incStat( 1, 'discPlayedOnBorder', $player_id );
+            else if( $x>=3 && $x<=6 && $y>=3 && $y<=6 )
+                $this->incStat( 1, 'discPlayedOnCenter', $player_id );
+
+            // Notify
+            $this->notify->all( "playDisc", clienttranslate( '${player_name} plays a disc and turns over ${returned_nbr} disc(s)' ), array(
+                'player_id' => $player_id,
+                'player_name' => $this->getActivePlayerName(),
+                'returned_nbr' => count( $turnedOverDiscs ),
+                'x' => $x,
+                'y' => $y
+            ) );
+
+            $this->notify->all( "turnOverDiscs", '', array(
+                'player_id' => $player_id,
+                'turnedOver' => $turnedOverDiscs
+            ) );
+            
+            $newScores = $this->getCollectionFromDb( "SELECT player_id, player_score FROM player", true );
+            $this->notify->all( "newScores", "", array(
+                "scores" => $newScores
+            ) );
+            // Then, go to the next state
+            $this->gamestate->nextState( 'playDisc' );
         }
-
-        // Add your game logic to play a card here.
-        $card_name = self::$CARD_TYPES[$card_id]['card_name'];
-
-        // Notify all players about the card played.
-        $this->notify->all("cardPlayed", clienttranslate('${player_name} plays ${card_name}'), [
-            "player_id" => $player_id,
-            "player_name" => $this->getActivePlayerName(), // remove this line if you uncomment notification decorator
-            "card_name" => $card_name, // remove this line if you uncomment notification decorator
-            "card_id" => $card_id,
-            "i18n" => ['card_name'], // remove this line if you uncomment notification decorator
-        ]);
-
-        // at the end of the action, move to the next state
-        $this->gamestate->nextState("playCard");
+        else
+            throw new \BgaSystemException( "Impossible move" );
     }
 
     public function actPass(): void
@@ -135,7 +172,7 @@ class Game extends \Table
         // Get some values from the current game situation from the database.
 
         return [
-            "playableCardsIds" => [1, 2],
+            'possibleMoves' => $this->getPossibleMoves( intval($this->getActivePlayerId()) )
         ];
     }
 
@@ -161,18 +198,56 @@ class Game extends \Table
      *
      * The action method of state `nextPlayer` is called everytime the current game state is set to `nextPlayer`.
      */
-    public function stNextPlayer(): void {
-        // Retrieve the active player ID.
-        $player_id = (int)$this->getActivePlayerId();
+    public function stNextPlayer(): void
+    {
+        // Active next player
+        $player_id = intval($this->activeNextPlayer());
 
-        // Give some extra time to the active player when he completed an action
-        $this->giveExtraTime($player_id);
+        // Check if both player has at least 1 discs, and if there are free squares to play
+        $player_to_discs = $this->getCollectionFromDb( "SELECT board_player, COUNT( board_x )
+                                                       FROM board
+                                                       GROUP BY board_player", true );
+
+        if( ! isset( $player_to_discs[ null ] ) )
+        {
+            // Index 0 has not been set => there's no more free place on the board !
+            // => end of the game
+            $this->gamestate->nextState( 'endGame' );
+            return ;
+        }
+        else if( ! isset( $player_to_discs[ $player_id ] ) )
+        {
+            // Active player has no more disc on the board => he looses immediately
+            $this->gamestate->nextState( 'endGame' );
+            return ;
+        }
         
-        $this->activeNextPlayer();
+        // Can this player play?
 
-        // Go to another gamestate
-        // Here, we would detect if the game is over, and in this case use "endGame" transition instead 
-        $this->gamestate->nextState("nextPlayer");
+        $possibleMoves = $this->getPossibleMoves( $player_id );
+        if( count( $possibleMoves ) == 0 )
+        {
+
+            // This player can't play
+            // Can his opponent play ?
+            $opponent_id = (int)$this->getUniqueValueFromDb( "SELECT player_id FROM player WHERE player_id!='$player_id' " );
+            if( count( $this->getPossibleMoves( $opponent_id ) ) == 0 )
+            {
+                // Nobody can move => end of the game
+                $this->gamestate->nextState( 'endGame' );
+            }
+            else
+            {            
+                // => pass his turn
+                $this->gamestate->nextState( 'cantPlay' );
+            }
+        }
+        else
+        {
+            // This player can play. Give him some extra time
+            $this->giveExtraTime( $player_id );
+            $this->gamestate->nextState( 'nextTurn' );
+        }
     }
 
     /**
@@ -188,21 +263,21 @@ class Game extends \Table
      */
     public function upgradeTableDb($from_version)
     {
-//       if ($from_version <= 1404301345)
-//       {
-//            // ! important ! Use DBPREFIX_<table_name> for all tables
-//
-//            $sql = "ALTER TABLE DBPREFIX_xxxxxxx ....";
-//            $this->applyDbUpgradeToAllDB( $sql );
-//       }
-//
-//       if ($from_version <= 1405061421)
-//       {
-//            // ! important ! Use DBPREFIX_<table_name> for all tables
-//
-//            $sql = "CREATE TABLE DBPREFIX_xxxxxxx ....";
-//            $this->applyDbUpgradeToAllDB( $sql );
-//       }
+        //       if ($from_version <= 1404301345)
+        //       {
+        //            // ! important ! Use DBPREFIX_<table_name> for all tables
+        //
+        //            $sql = "ALTER TABLE DBPREFIX_xxxxxxx ....";
+        //            $this->applyDbUpgradeToAllDB( $sql );
+        //       }
+        //
+        //       if ($from_version <= 1405061421)
+        //       {
+        //            // ! important ! Use DBPREFIX_<table_name> for all tables
+        //
+        //            $sql = "CREATE TABLE DBPREFIX_xxxxxxx ....";
+        //            $this->applyDbUpgradeToAllDB( $sql );
+        //       }
     }
 
     /*
@@ -223,10 +298,14 @@ class Game extends \Table
         // Get information about players.
         // NOTE: you can retrieve some extra field you added for "player" table in `dbmodel.sql` if you need it.
         $result["players"] = $this->getCollectionFromDb(
-            "SELECT `player_id` `id`, `player_score` `score` FROM `player`"
+            "SELECT `player_id` `id`, `player_score` `score`, `player_color` `color` FROM `player`"
         );
 
         // TODO: Gather all information about current game situation (visible by player $current_player_id).
+        // Get reversi board token
+        $result['board'] = self::getObjectListFromDB("SELECT board_x x, board_y y, board_player player
+	        FROM board
+	        WHERE board_player IS NOT NULL");
 
         return $result;
     }
@@ -250,7 +329,7 @@ class Game extends \Table
         // Set the colors of the players with HTML color code. The default below is red/green/blue/orange/brown. The
         // number of colors defined here must correspond to the maximum number of players allowed for the gams.
         $gameinfos = $this->getGameinfos();
-        $default_colors = $gameinfos['player_colors'];
+        $default_colors = array("ffffff", "000000");
 
         foreach ($players as $player_id => $player) {
             // Now you can access both $player_id and $player array
@@ -274,7 +353,6 @@ class Game extends \Table
             )
         );
 
-        $this->reattributeColorsBasedOnPreferences($players, $gameinfos["player_colors"]);
         $this->reloadPlayersBasicInfos();
 
         // Init global values with their initial values.
@@ -291,6 +369,23 @@ class Game extends \Table
         // $this->initStat("player", "player_teststat1", 0);
 
         // TODO: Setup the initial game situation here.
+        // Init the board
+        $sql = "INSERT INTO board (board_x,board_y,board_player) VALUES ";
+        $sql_values = array();
+        list($blackplayer_id, $whiteplayer_id) = array_keys($players);
+        for ($x = 1; $x <= 8; $x++) {
+            for ($y = 1; $y <= 8; $y++) {
+                $token_value = "NULL";
+                if (($x == 4 && $y == 4) || ($x == 5 && $y == 5))  // Initial positions of white player
+                    $token_value = "'$whiteplayer_id'";
+                else if (($x == 4 && $y == 5) || ($x == 5 && $y == 4))  // Initial positions of black player
+                    $token_value = "'$blackplayer_id'";
+
+                $sql_values[] = "('$x','$y',$token_value)";
+            }
+        }
+        $sql .= implode(',', $sql_values);
+        $this->DbQuery($sql);
 
         // Activate first player once everything has been initialized and ready.
         $this->activeNextPlayer();
@@ -318,11 +413,10 @@ class Game extends \Table
 
         if ($state["type"] === "activeplayer") {
             switch ($state_name) {
-                default:
-                {
-                    $this->gamestate->nextState("zombiePass");
-                    break;
-                }
+                default: {
+                        $this->gamestate->nextState("zombiePass");
+                        break;
+                    }
             }
 
             return;
@@ -335,5 +429,126 @@ class Game extends \Table
         }
 
         throw new \feException("Zombie mode not supported at this game state: \"{$state_name}\".");
+    }
+
+    //////////////////////////////////////////////////////////////////////////////
+    //////////// Utility functions    (functions used everywhere)
+    ////////////
+    
+    // Get the list of returned disc when "player" we play at this place ("x", "y"),
+    //  or a void array if no disc is returned (invalid move)
+    function getTurnedOverDiscs( $x, $y, $player, $board )
+    {
+        $turnedOverDiscs = array();
+
+        if( $board[ $x ][ $y ] === null ) // If there is already a disc on this place, this can't be a valid move
+        {
+            // For each directions...
+            $directions = array(
+                array( -1,-1 ), array( -1,0 ), array( -1, 1 ), array( 0, -1),
+                array( 0,1 ), array( 1,-1), array( 1,0 ), array( 1, 1 )
+            );
+
+            foreach( $directions as $direction )
+            {
+                // Starting from the square we want to place a disc...
+                $current_x = $x;
+                $current_y = $y;
+                $bContinue = true;
+                $mayBeTurnedOver = array();
+
+                while( $bContinue )
+                {
+                    // Go to the next square in this direction
+                    $current_x += $direction[0];
+                    $current_y += $direction[1];
+
+                    if( $current_x<1 || $current_x>8 || $current_y<1 || $current_y>8 )
+                        $bContinue = false; // Out of the board => stop here for this direction
+                    else if( $board[ $current_x ][ $current_y ] === null )
+                        $bContinue = false; // An empty square => stop here for this direction
+                    else if( $board[ $current_x ][ $current_y ] != $player )
+                    {
+                        // There is a disc from our opponent on this square
+                        // => add it to the list of the "may be turned over", and continue on this direction
+                        $mayBeTurnedOver[] = array( 'x' => $current_x, 'y' => $current_y );
+                    }
+                    else if( $board[ $current_x ][ $current_y ] == $player )
+                    {
+                        // This is one of our disc
+
+                        if( count( $mayBeTurnedOver ) == 0 )
+                        {
+                            // There is no disc to be turned over between our 2 discs => stop here for this direction
+                            $bContinue = false;
+                        }
+                        else
+                        {
+                            // We found some disc to be turned over between our 2 discs
+                            // => add them to the result and stop here for this direction
+                            $turnedOverDiscs = array_merge( $turnedOverDiscs, $mayBeTurnedOver );
+                            $bContinue = false;
+                        }
+                    }
+                }
+            }
+        }
+
+        return $turnedOverDiscs;
+    }
+
+    // Get the complete board with a double associative array
+    function getBoard()
+    {
+        return self::getDoubleKeyCollectionFromDB( "SELECT board_x x, board_y y, board_player player
+                                                       FROM board", true );
+    }
+
+    // Get the list of possible moves (x => y => true)
+    function getPossibleMoves( $player_id )
+    {
+        $result = array();
+
+        $board = self::getBoard();
+
+        for( $x=1; $x<=8; $x++ )
+        {
+            for( $y=1; $y<=8; $y++ )
+            {
+                $returned = self::getTurnedOverDiscs( $x, $y, $player_id, $board );
+                if( count( $returned ) == 0 )
+                {
+                    // No discs returned => not a possible move
+                }
+                else
+                {
+                    // Okay => set this coordinate to "true"
+                    if( ! isset( $result[$x] ) )
+                        $result[$x] = array();
+
+                    $result[$x][$y] = true;
+                }
+            }
+        }
+
+        return $result;
+    }
+
+    function debug_playToEndGame() {
+      while (intval($this->gamestate->state_id()) < ST_END_GAME) {
+        $state = intval($this->gamestate->state_id());
+        switch ($state) {
+          case ST_PLAYER_PLAY_DISC:
+            $args = $this->argPlayerTurn();
+            $possibleMoves = $args['possibleMoves'];
+            $possibleXs = array_keys($possibleMoves);            
+            $x = $possibleXs[bga_rand(0, count($possibleXs) - 1)];
+            $possibleYs = array_keys($possibleMoves[$x]);            
+            $y = $possibleYs[bga_rand(0, count($possibleYs) - 1)];
+
+            $this->actPlayDisc($x, $y);
+            break;
+        }
+      }
     }
 }
