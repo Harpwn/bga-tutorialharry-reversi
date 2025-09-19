@@ -11,3 +11,11 @@ yarn-error.log
 # Dependency lock files
 package-lock.json
 yarn.lock
+
+# Built files
+digideviltutorialreversi.js
+digideviltutorialreversi.css.map
+digideviltutorialreversi.css
+digideviltutorialreversi.js.map
+
+dist

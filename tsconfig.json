@@ -1,17 +1,14 @@
 {
-    "rootDir": ".", 
-    "compilerOptions": {
-      "target": "es5",
-      "module": "none",
-      "lib": ["dom", "esnext"],  
-      "sourceMap": false,
-      "typeRoots": ["src/types", "./types", "./node_modules/@types"],
-      "outFile": "digideviltutorialreversi.js"
-    },
-    "files": [
-        "bga-framework.d.ts",
-        "src/digideviltutorialreversi.d.ts",
-        "src/digideviltutorialreversi.ts",
-        "src/define.ts"
-    ]
+  "compilerOptions": {
+    "target": "ESNext",               // ✅ modern typing
+    "module": "ESNext",               
+    "lib": ["DOM", "ESNext"],         
+    "strict": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+    "isolatedModules": true,          // esbuild expects this
+    "noEmit": true                    // let esbuild handle output
+  },
+  "include": ["src", "*.d.ts"]
 }

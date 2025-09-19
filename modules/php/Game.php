@@ -1,4 +1,6 @@
 <?php
+declare(strict_types=1);
+namespace Bga\Games\DigidevilTutorialReversi;
 
 /**
  *------
@@ -16,26 +18,14 @@
  * In this PHP file, you are going to defines the rules of the game.
  */
 
-declare(strict_types=1);
-
-namespace Bga\Games\DigidevilTutorialReversi;
-
+require_once('actions.php');
+require_once('constants.inc.php');
 require_once(APP_GAMEMODULE_PATH . "module/table/table.game.php");
 
 class Game extends \Table
 {
-    private static array $CARD_TYPES;
+    use \ActionTrait;
 
-    /**
-     * Your global variables labels:
-     *
-     * Here, you can assign labels to global variables you are using for this game. You can use any number of global
-     * variables with IDs between 10 and 99. If your game has options (variants), you also have to associate here a
-     * label to the corresponding ID in `gameoptions.inc.php`.
-     *
-     * NOTE: afterward, you can get/set the global variables with `getGameStateValue`, `setGameStateInitialValue` or
-     * `setGameStateValue` functions.
-     */
     public function __construct()
     {
         parent::__construct();
@@ -46,117 +36,6 @@ class Game extends \Table
             "my_first_game_variant" => 100,
             "my_second_game_variant" => 101,
         ]);
-
-        self::$CARD_TYPES = [
-            1 => [
-                "card_name" => clienttranslate('Troll'), // ...
-            ],
-            2 => [
-                "card_name" => clienttranslate('Goblin'), // ...
-            ],
-            // ...
-        ];
-
-        /* example of notification decorator.
-        // automatically complete notification args when needed
-        $this->notify->addDecorator(function(string $message, array $args) {
-            if (isset($args['player_id']) && !isset($args['player_name']) && str_contains($message, '${player_name}')) {
-                $args['player_name'] = $this->getPlayerNameById($args['player_id']);
-            }
-        
-            if (isset($args['card_id']) && !isset($args['card_name']) && str_contains($message, '${card_name}')) {
-                $args['card_name'] = self::$CARD_TYPES[$args['card_id']]['card_name'];
-                $args['i18n'][] = ['card_name'];
-            }
-            
-            return $args;
-        });*/
-    }
-
-    /**
-     * Player action, example content.
-     *
-     * In this scenario, each time a player plays a card, this method will be called. This method is called directly
-     * by the action trigger on the front side with `bgaPerformAction`.
-     *
-     * @throws BgaUserException
-     */
-    public function actPlayDisc(int $x, int $y): void
-    {
-         $player_id = intval($this->getActivePlayerId()); 
-        
-        // Now, check if this is a possible move
-        $board = $this->getBoard();
-        $turnedOverDiscs = $this->getTurnedOverDiscs( $x, $y, $player_id, $board );
-        
-        if( count( $turnedOverDiscs ) > 0 )
-        {
-            // This move is possible!
-
-        $sql = "UPDATE board SET board_player='$player_id'
-                    WHERE ( board_x, board_y) IN ( ";
-            
-            foreach( $turnedOverDiscs as $turnedOver )
-            {
-                $sql .= "('".$turnedOver['x']."','".$turnedOver['y']."'),";
-            }
-            $sql .= "('$x','$y') ) ";
-                       
-            $this->DbQuery( $sql );
-            // Update scores according to the number of disc on board
-            $sql = "UPDATE player
-                    SET player_score = (
-                    SELECT COUNT( board_x ) FROM board WHERE board_player=player_id
-                    )";
-            $this->DbQuery( $sql );
-            
-            // Statistics
-            $this->incStat( count( $turnedOverDiscs ), "turnedOver", $player_id );
-            if( ($x==1 && $y==1) || ($x==8 && $y==1) || ($x==1 && $y==8) || ($x==8 && $y==8) )
-                $this->incStat( 1, 'discPlayedOnCorner', $player_id );
-            else if( $x==1 || $x==8 || $y==1 || $y==8 )
-                $this->incStat( 1, 'discPlayedOnBorder', $player_id );
-            else if( $x>=3 && $x<=6 && $y>=3 && $y<=6 )
-                $this->incStat( 1, 'discPlayedOnCenter', $player_id );
-
-            // Notify
-            $this->notify->all( "playDisc", clienttranslate( '${player_name} plays a disc and turns over ${returned_nbr} disc(s)' ), array(
-                'player_id' => $player_id,
-                'player_name' => $this->getActivePlayerName(),
-                'returned_nbr' => count( $turnedOverDiscs ),
-                'x' => $x,
-                'y' => $y
-            ) );
-
-            $this->notify->all( "turnOverDiscs", '', array(
-                'player_id' => $player_id,
-                'turnedOver' => $turnedOverDiscs
-            ) );
-            
-            $newScores = $this->getCollectionFromDb( "SELECT player_id, player_score FROM player", true );
-            $this->notify->all( "newScores", "", array(
-                "scores" => $newScores
-            ) );
-            // Then, go to the next state
-            $this->gamestate->nextState( 'playDisc' );
-        }
-        else
-            throw new \BgaSystemException( "Impossible move" );
-    }
-
-    public function actPass(): void
-    {
-        // Retrieve the active player ID.
-        $player_id = (int)$this->getActivePlayerId();
-
-        // Notify all players about the choice to pass.
-        $this->notify->all("pass", clienttranslate('${player_name} passes'), [
-            "player_id" => $player_id,
-            "player_name" => $this->getActivePlayerName(), // remove this line if you uncomment notification decorator
-        ]);
-
-        // at the end of the action, move to the next state
-        $this->gamestate->nextState("pass");
     }
 
     /**

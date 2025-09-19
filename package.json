@@ -4,20 +4,23 @@
   "description": "",
   "main": "digideviltutorialreversi.js",
   "scripts": {
-    "build:ts": "tsc",
+    "build:ts": "node build.js",
+    "check": "tsc --noEmit",
     "build:scss": "sass --no-source-map src/digideviltutorialreversi.scss digideviltutorialreversi.css",
-    "watch:ts": "tsc --watch",
-    "watch:scss": "sass --watch src/digideviltutorialreversi.scss digideviltutorialreversi.css",
-    "watch": "npm run watch:ts && npm run watch:scss",
-    "build": "npm run build:ts && npm run build:scss"
+    "watch:scss": "sass --watch src/digideviltutorialreversi.scss digideviltutorialreversi.css"
   },
   "author": "Harry B",
   "license": "MIT",
   "devDependencies": {
+    "@babel/cli": "^7.28.3",
+    "@babel/core": "^7.28.4",
+    "@babel/preset-env": "^7.28.3",
+    "core-js": "^3.45.1",
+    "esbuild": "^0.25.10",
+    "regenerator-runtime": "^0.14.1",
     "sass": "^1.32.6",
-    "typescript": "^4.1.3"
+    "terser": "^5.44.0",
+    "typescript": "^4.9.5"
   },
-  "prettier": {
-    
-  }
+  "prettier": {}
 }
