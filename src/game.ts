@@ -1,8 +1,12 @@
+import ReversiAnimations from "./animations";
 
 // Note: it does not really extend it in es6 way, you cannot call super you have to use dojo way
 export default class DigidevilTutorialReversi<DigidevilTutorialReversiGamedatas> extends GameGui {
+  private Animations: ReversiAnimations;
+  
   constructor() {
     super();
+    this.Animations = new ReversiAnimations(this);
   }
 
   public setup(gamedatas: any) {
@@ -49,8 +53,6 @@ export default class DigidevilTutorialReversi<DigidevilTutorialReversiGamedatas>
       );
   }
   public onEnteringState(stateName: string, args: any) {
-    console.log("Entering state: " + stateName);
-
     switch (stateName) {
       case "playerTurn":
         this.updatePossibleMoves(args.args.possibleMoves);
@@ -58,20 +60,17 @@ export default class DigidevilTutorialReversi<DigidevilTutorialReversiGamedatas>
     }
   }
   public onLeavingState(stateName: string) {
-    console.log("Leaving state: " + stateName);
   }
   public onUpdateActionButtons(stateName: string, args: any) {
-    console.log("Updating action buttons for state: " + stateName);
   }
   public setupNotifications() {
-    console.log("Setting up notifications");
     // automatically listen to the notifications, based on the `notif_xxx` function on this class.
     this.bgaSetupPromiseNotifications();
   }
 
   async addDiscToBoard(x: number, y: number, playerId: number) {
     const color = this.gamedatas.players[playerId].color;
-
+    console.log("this shouldnt be here");
     document
       .getElementById("discs")
       .insertAdjacentHTML(
@@ -140,30 +139,8 @@ export default class DigidevilTutorialReversi<DigidevilTutorialReversiGamedatas>
 
     // wait for the animations of all turned discs to be over before considering the notif done
     await Promise.all(
-      args.turnedOver.map((disc) => this.animateTurnOverDisc(disc, targetColor))
+      args.turnedOver.map((disc) => this.Animations.animateTurnOverDisc(disc, targetColor))
     );
-  }
-
-  async animateTurnOverDisc(disc, targetColor) {
-    const discDiv = document.getElementById(`disc_${disc.x}${disc.y}`);
-    if (!this.bgaAnimationsActive()) {
-      // do not play animations if the animations aren't activated (fast replay mode)
-      discDiv.dataset.color = targetColor;
-      return Promise.resolve();
-    }
-
-    // Make the disc blink 2 times
-    const anim = dojo.fx.chain([
-      dojo.fadeIn({ node: discDiv }),
-      dojo.fadeIn({ node: discDiv }),
-      dojo.fadeIn({
-        node: discDiv,
-        onEnd: () => (discDiv.dataset.color = targetColor),
-      }),
-      dojo.fadeIn({ node: discDiv }),
-    ]); // end of dojo.fx.chain
-
-    await this.bgaPlayDojoAnimation(anim);
   }
 
   async notif_newScores(args) {
